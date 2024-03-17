@@ -1,4 +1,4 @@
-# Rust Trader
+# 🦀 Rust Trader 💰
 
 Rust Trader is a high-performance financial trading system implemented in Rust. It leverages Rust's memory safety guarantees and concurrency features to provide a reliable and efficient trading system.
 
