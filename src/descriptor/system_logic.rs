@@ -1,23 +1,18 @@
-mod system_entity;
+use crate::descriptor::domain_entity::Order;
+use crate::descriptor::system_entity::{
+    MarketDataConnector, Notification, NotificationService, OrderDAG, OrderExecutor,
+};
+use futures::stream::Stream;
+use futures::stream::StreamExt;
 use petgraph::algo::toposort;
-use std::collections::VecDeque;
+use petgraph::graph::DiGraph;
+use reqwest::Client;
+use serde_json::json;
+use std::collections::HashMap;
+use tokio::sync::mpsc;
 use tokio::task;
 
-impl system_entity::Event {
-    pub fn new(
-        event_type: system_entity::EventType,
-        timestamp: u64,
-        dependencies: Vec<u64>,
-    ) -> Self {
-        Self {
-            event_type,
-            timestamp,
-            dependencies,
-        }
-    }
-}
-
-impl EventDAG {
+impl OrderDAG {
     pub fn new() -> Self {
         Self {
             graph: DiGraph::new(),
@@ -26,9 +21,9 @@ impl EventDAG {
     }
 
     // Adds an event to the graph and sets up dependencies.
-    pub fn add_event(&mut self, event: Event, dependencies: Vec<u64>) {
-        let node_idx = self.graph.add_node(event);
-        self.indices.insert(event.id, node_idx);
+    pub fn add_order(&mut self, order: Order, dependencies: Vec<u64>) {
+        let node_idx = self.graph.add_node(order);
+        self.indices.insert(order.id.as_u128() as u64, node_idx);
 
         for dep_id in dependencies {
             if let Some(&dep_idx) = self.indices.get(&dep_id) {
@@ -54,7 +49,7 @@ impl EventDAG {
                 levels
                     .entry(level)
                     .or_insert_with(Vec::new)
-                    .push(self.graph[node].id);
+                    .push(self.graph[node].id.as_u128() as u64); // Convert Uuid to u64
             }
         }
 
@@ -65,8 +60,11 @@ impl EventDAG {
     }
 }
 
-impl EventProcessor {
-    pub async fn process_events(dag: &EventDAG) {
+impl OrderExecutor {
+    pub fn new(dag: OrderDAG, status_tx: mpsc::Sender<String>) -> Self {
+        Self { dag, status_tx }
+    }
+    pub async fn process_events(dag: &OrderDAG) {
         let groups = dag.group_events_for_parallel_execution();
 
         for group in groups.into_iter() {
@@ -89,6 +87,95 @@ impl EventProcessor {
                 let _ = current_task
                     .await
                     .expect("Task panicked or encountered an error.");
+
+                // Send status updates to the main thread.
+                let _ = self
+                    .status_tx
+                    .send(Notification::Slack {
+                        message: format!("Processed event ID: {}", event_id),
+                        channel: "operations".to_string(),
+                    })
+                    .await
+                    .expect("Failed to send status update");
+            }
+        }
+    }
+}
+
+impl MarketDataConnector {
+    pub fn new(api_key: String, ws_url: String, status_tx: mpsc::Sender<String>) -> Self {
+        Self {
+            api_key,
+            ws_url,
+            status_tx,
+        }
+    }
+
+    pub async fn connect(&self) {
+        let url = format!("{}?apiKey={}", self.ws_url, self.api_key);
+
+        loop {
+            match tokio_tungstenite::connect_async(url.clone()).await {
+                Ok((_ws_stream, _)) => {
+                    // Send a successful connection notification
+                    let _ = self
+                        .status_tx
+                        .send(Notification::Slack {
+                            message: "Connected to WebSocket".to_string(),
+                            channel: "operations".to_string(),
+                        })
+                        .await
+                        .expect("Failed to send notification");
+                }
+                Err(e) => {
+                    // Send a failed connection notification
+                    let _ = self
+                        .status_tx
+                        .send(Notification::Slack {
+                            message: format!("Failed to connect: {}", e),
+                            channel: "operations".to_string(),
+                        })
+                        .await
+                        .expect("Failed to send notification");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                }
+            }
+        }
+    }
+}
+
+impl Notification {
+    pub async fn send(&self, webhook_url: &str) -> Result<(), reqwest::Error> {
+        match self {
+            Notification::Slack { message, channel } => {
+                let client = Client::new();
+                // Constructing the message to include channel information.
+                // Note: This is for demonstration. Slack's webhook does not route messages based on this field.
+                let formatted_message = format!("Channel: {}\n{}", channel, message);
+
+                client
+                    .post(webhook_url)
+                    .header("Content-Type", "application/json")
+                    .body(json!({"text": formatted_message}).to_string())
+                    .send()
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl NotificationService {
+    pub fn new(webhook_url: String, rx: mpsc::Receiver<Notification>) -> Self {
+        Self { webhook_url, rx }
+    }
+
+    // Changed to directly accept the stream for more flexibility and efficiency
+    pub async fn listen_and_send(mut self) {
+        while let Some(notification) = self.rx.recv().await {
+            match notification.send(&self.webhook_url).await {
+                Ok(_) => println!("Notification sent successfully"),
+                Err(e) => eprintln!("Failed to send notification: {}", e),
             }
         }
     }

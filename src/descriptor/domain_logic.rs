@@ -1,34 +1,34 @@
-mod domain_entity;
+use super::domain_entity::{Asset, Order, OrderStatus, OrderType};
+use rust_decimal::Decimal;
+use uuid::Uuid;
 
-impl domain_entity::Asset {
+impl Asset {
     pub fn new(symbol: String, name: String) -> Self {
         Self {
-            id: uuid::Uuid::new_v4(),
+            id: Uuid::new_v4(),
             symbol,
             name,
         }
     }
 }
 
-pub impl<T: Tradable> Order<T> {
+impl Order {
     pub fn new(
         account_id: uuid::Uuid,
-        asset: T,
+        asset_id: uuid::Uuid,
         market_id: String,
         order_type: OrderType,
-        quantity: f64,
-        price: f64,
+        quantity: Decimal,
+        price: Decimal,
     ) -> Self {
         Self {
-            id: uuid::Uuid::new_v4(),
-            account_id,
-            asset,
+            id: Uuid::new_v4(),
+            asset_id,
             market_id,
             order_type,
-            status: OrderStatus::Open,
+            status: OrderStatus::Open(chrono::Utc::now()),
             quantity,
             price,
-            timestamp: chrono::Utc::now().naive_utc(),
         }
     }
 }
