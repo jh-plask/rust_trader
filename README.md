@@ -1,6 +1,6 @@
 # 🦀 Rust Trader 💰
 
-Rust Trader is a high-performance financial trading system implemented in Rust. It leverages Rust's memory safety guarantees and concurrency features to provide a reliable and efficient trading system.
+Rust Trader is a high-performance financial trading system implemented in Rust. It leverages Rust's memory safety guarantees and concurrency features, along with the Tokio runtime for efficient concurrent execution, to provide a reliable and efficient trading system.
 
 ## Project Structure
 
@@ -20,7 +20,9 @@ The project is organized into several modules:
 
 ## Key Features
 
-- **Order Execution**: The `OrderExecutor` struct in `system_entity.rs` is responsible for executing orders. It uses a directed acyclic graph (DAG) to represent the dependencies between orders, allowing for efficient execution of complex order strategies.
+- **Parallel Execution**: Rust Trader uses the Tokio runtime for efficient concurrent execution. This allows it to handle multiple orders and trades simultaneously, improving overall system performance.
+
+- **Graph-based Order Chain**: The OrderExecutor struct in system_entity.rs is responsible for executing orders. It uses a directed acyclic graph (DAG) to represent the dependencies between orders, allowing for efficient execution of complex order strategies.
 
 - **Market Data Connection**: The `MarketDataConnector` struct in `system_entity.rs` is responsible for connecting to the market data feed. It uses WebSockets to receive real-time market data updates.
 
