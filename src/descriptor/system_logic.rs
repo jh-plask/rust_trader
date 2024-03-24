@@ -6,6 +6,7 @@ use futures::stream::Stream;
 use futures::stream::StreamExt;
 use petgraph::algo::toposort;
 use petgraph::graph::DiGraph;
+use petgraph::graph::NodeIndex;
 use reqwest::Client;
 use serde_json::json;
 use std::collections::HashMap;
@@ -22,7 +23,8 @@ impl OrderDAG {
 
     // Adds an event to the graph and sets up dependencies.
     pub fn add_order(&mut self, order: Order, dependencies: Vec<u64>) {
-        let node_idx = self.graph.add_node(order);
+        let cloned_order = order.clone(); // Clone the order
+        let node_idx = self.graph.add_node(cloned_order);
         self.indices.insert(order.id.as_u128() as u64, node_idx);
 
         for dep_id in dependencies {
@@ -35,17 +37,19 @@ impl OrderDAG {
     // Groups events for parallel execution.
     pub fn group_events_for_parallel_execution(&self) -> Vec<Vec<u64>> {
         let mut levels: HashMap<usize, Vec<u64>> = HashMap::new();
+        let mut node_levels: HashMap<NodeIndex, usize> = HashMap::new();
+
         if let Ok(sorted_nodes) = toposort(&self.graph, None) {
             for node in sorted_nodes {
                 let level = self
                     .graph
                     .neighbors_directed(node, petgraph::Direction::Incoming)
-                    .map(|n| self.graph[n].level)
+                    .map(|n| node_levels.get(&n).cloned().unwrap_or(0))
                     .max()
                     .unwrap_or(0)
                     + 1;
 
-                self.graph[node].level = level;
+                node_levels.insert(node, level);
                 levels
                     .entry(level)
                     .or_insert_with(Vec::new)
@@ -61,22 +65,33 @@ impl OrderDAG {
 }
 
 impl OrderExecutor {
-    pub fn new(dag: OrderDAG, status_tx: mpsc::Sender<String>) -> Self {
+    pub fn new(dag: OrderDAG, status_tx: mpsc::Sender<Notification>) -> Self {
         Self { dag, status_tx }
     }
-    pub async fn process_events(dag: &OrderDAG) {
-        let groups = dag.group_events_for_parallel_execution();
+
+    pub async fn process_events(&self) {
+        let groups = self.dag.group_events_for_parallel_execution();
 
         for group in groups.into_iter() {
             // Collect all async tasks for the current group.
             let tasks: Vec<_> = group
                 .into_iter()
                 .map(|event_id| {
+                    let status_tx = self.status_tx.clone();
                     task::spawn(async move {
                         // Simulate processing an event. Replace with actual logic.
                         println!("Processing event ID: {}", event_id);
                         // Example of a possible async operation
                         // e.g., tokio::time::sleep(Duration::from_millis(100)).await;
+
+                        // Send status updates to the main thread.
+                        let _ = status_tx
+                            .send(Notification::Slack {
+                                message: format!("Processed event ID: {}", event_id),
+                                channel: "operations".to_string(),
+                            })
+                            .await
+                            .expect("Failed to send status update");
                     })
                 })
                 .collect();
@@ -87,23 +102,13 @@ impl OrderExecutor {
                 let _ = current_task
                     .await
                     .expect("Task panicked or encountered an error.");
-
-                // Send status updates to the main thread.
-                let _ = self
-                    .status_tx
-                    .send(Notification::Slack {
-                        message: format!("Processed event ID: {}", event_id),
-                        channel: "operations".to_string(),
-                    })
-                    .await
-                    .expect("Failed to send status update");
             }
         }
     }
 }
 
 impl MarketDataConnector {
-    pub fn new(api_key: String, ws_url: String, status_tx: mpsc::Sender<String>) -> Self {
+    pub fn new(api_key: String, ws_url: String, status_tx: mpsc::Sender<Notification>) -> Self {
         Self {
             api_key,
             ws_url,

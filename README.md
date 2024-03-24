@@ -14,8 +14,6 @@ The project is organized into several modules:
 
 - `src/descriptor/system_logic.rs`: This file contains the logic related to the system entities. This includes the algorithms for order routing, market data processing, and other system-level operations.
 
-- `src/utils/time.rs`: This file contains utility functions for handling time-related operations. This includes functions for converting between different time formats and calculating time intervals.
-
 - `src/main.rs`: This is the entry point of the application. It sets up the trading system and starts the main event loop.
 
 ## Key Features

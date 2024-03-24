@@ -12,7 +12,7 @@ pub struct OrderDAG {
 
 pub struct OrderExecutor {
     pub dag: OrderDAG,
-    pub status_tx: Sender<String>, // Channel to send status updates to the main thread
+    pub status_tx: Sender<Notification>, // Channel to send status updates to the main thread
 }
 
 pub enum Notification {
@@ -22,7 +22,7 @@ pub enum Notification {
 pub struct MarketDataConnector {
     pub api_key: String,
     pub ws_url: String,
-    pub status_tx: Sender<String>,
+    pub status_tx: Sender<Notification>,
 }
 
 pub struct NotificationService {

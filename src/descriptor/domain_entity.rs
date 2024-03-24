@@ -14,11 +14,13 @@ pub struct Account {
     currency: String,
 }
 
+#[derive(Debug, Clone)]
 pub enum OrderType {
     Buy,
     Sell,
 }
 
+#[derive(Debug, Clone)]
 pub enum OrderStatus {
     Open(chrono::DateTime<chrono::Utc>),
     PartiallyFilled(chrono::DateTime<chrono::Utc>),
@@ -26,6 +28,7 @@ pub enum OrderStatus {
     Cancelled(chrono::DateTime<chrono::Utc>),
 }
 
+#[derive(Debug, Clone)]
 pub struct Order {
     pub id: uuid::Uuid,
     pub asset_id: uuid::Uuid,
